@@ -35,6 +35,8 @@ data class WidgetCache(
     val providers: List<WidgetProvider> = emptyList(),
     /** Mirrors the app setting so the widget can match the app and system theme. */
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** When a refresh started (0 = idle); the widget shows "刷新中…" briefly. */
+    val refreshingAt: Long = 0L,
 )
 
 /**
@@ -47,30 +49,43 @@ object WidgetCacheStore {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun write(context: Context, state: AppState) {
-        val providers = state.providers.mapNotNull { provider ->
-            val snapshot = state.snapshots[provider.id] ?: return@mapNotNull null
-            val balanceSlot = snapshot.balance.takeIf { it.state == SlotState.SUPPORTED }
+        // Include EVERY provider the app knows about (even one that has not
+        // been fetched yet) so the widget shows the same provider set as the
+        // app; missing numbers simply render as "—".
+        val providers = state.providers.map { provider ->
+            val snapshot = state.snapshots[provider.id]
+            val balanceSlot = snapshot?.balance?.takeIf { it.state == SlotState.SUPPORTED }
             WidgetProvider(
                 id = provider.id,
                 kind = provider.kind,
                 name = provider.kind.shortName,
-                planName = snapshot.planName,
-                fiveHour = snapshot.fiveHour.takeIf { it.state == SlotState.SUPPORTED }?.remainingPercent,
-                weekly = snapshot.weekly.takeIf { it.state == SlotState.SUPPORTED }?.remainingPercent,
-                monthly = snapshot.monthly.takeIf { it.state == SlotState.SUPPORTED }?.remainingPercent,
+                planName = snapshot?.planName,
+                fiveHour = snapshot?.fiveHour?.takeIf { it.state == SlotState.SUPPORTED }?.remainingPercent,
+                weekly = snapshot?.weekly?.takeIf { it.state == SlotState.SUPPORTED }?.remainingPercent,
+                monthly = snapshot?.monthly?.takeIf { it.state == SlotState.SUPPORTED }?.remainingPercent,
                 balance = balanceSlot?.let(::balanceLabel),
                 balanceValue = balanceSlot?.amount?.takeIf { balanceSlot.unit.isBlank() },
                 balanceCurrency = balanceSlot?.currency?.takeIf { balanceSlot.unit.isBlank() && it.isNotBlank() },
-                hasError = snapshot.error != null,
+                hasError = snapshot?.error != null,
             )
         }
+        val refreshing = state.refreshingAll || state.refreshing.isNotEmpty()
         val cache = WidgetCache(
-            updatedAt = providers.maxOfOrNull { state.snapshots[it.id]?.fetchedAt ?: 0L } ?: 0L,
+            updatedAt = state.snapshots.values.maxOfOrNull { it.fetchedAt } ?: 0L,
             providers = providers,
             themeMode = state.settings.themeMode,
+            refreshingAt = if (refreshing) System.currentTimeMillis() else 0L,
         )
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit { putString(KEY_CACHE, json.encodeToString(cache)) }
+    }
+
+    /** Flag a widget-triggered refresh so the header shows "刷新中…" at once. */
+    fun markRefreshing(context: Context) {
+        val current = read(context)
+        val updated = current.copy(refreshingAt = System.currentTimeMillis())
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit { putString(KEY_CACHE, json.encodeToString(updated)) }
     }
 
     fun read(context: Context): WidgetCache {

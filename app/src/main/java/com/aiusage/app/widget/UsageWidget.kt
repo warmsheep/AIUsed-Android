@@ -124,7 +124,21 @@ suspend fun refreshWidgets(context: Context) {
 
 class RefreshWidgetAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: androidx.glance.action.ActionParameters) {
-        RefreshScheduler.refreshNow(context)
+        // Immediate feedback: mark the cache as refreshing and repaint the
+        // widget (header shows "刷新中…").
+        WidgetCacheStore.markRefreshing(context)
+        runCatching { refreshWidgets(context) }
+        // Fetch directly through the SAME repository the app uses, so one tap
+        // always refreshes — WorkManager alone can sit in the job queue for
+        // minutes waiting on constraints (battery/network policy).
+        val app = context.applicationContext as? com.aiusage.app.AiUsageApp
+        val fetched = app != null && runCatching {
+            app.container.repository.refreshAll()
+        }.isSuccess
+        if (!fetched) {
+            RefreshScheduler.refreshNow(context)
+        }
+        runCatching { refreshWidgets(context) }
     }
 }
 
@@ -458,14 +472,15 @@ private fun WidgetHeader(cache: WidgetCache, colors: WidgetColors) {
                 maxLines = 1,
             )
             Spacer(GlanceModifier.height(1.dp))
-            val stamp = if (cache.updatedAt > 0) {
-                formatUpdatedAt(cache.updatedAt).removeSuffix("更新")
-            } else {
-                "尚未更新"
+            val refreshing = cache.refreshingAt > 0 &&
+                System.currentTimeMillis() - cache.refreshingAt < 120_000L
+            val stamp = when {
+                cache.updatedAt > 0 -> formatUpdatedAt(cache.updatedAt).removeSuffix("更新")
+                else -> "尚未更新"
             }
             val count = if (cache.providers.size > 0) " · ${cache.providers.size} 个" else ""
             Text(
-                text = "$stamp$count",
+                text = if (refreshing) "刷新中…" else "$stamp$count",
                 style = TextStyle(color = ColorProvider(colors.textLow), fontSize = 8.sp),
                 maxLines = 1,
             )
