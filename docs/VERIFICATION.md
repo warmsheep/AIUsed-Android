@@ -17,7 +17,7 @@
 
 - `app/build/outputs/apk/debug/app-debug.apk`
 - `app/build/outputs/apk/release/app-release-unsigned.apk`
-- `dist/AIUsage-1.0.0.apk`（zipalign + debug keystore 签名，仅侧载；SHA-256 `f87554525fcdb1883056150ab21f7e211ac64595982cd638ba9567f82a762ab4`）
+- `dist/AIUsage-1.0.0.apk`（zipalign + debug keystore 签名，仅侧载；SHA-256 `ecddd357a926fe20a354e1574490e9a9badc9d1326e431314166d5e20bb10fbc`）
 
 ## 2. JVM 单元测试
 

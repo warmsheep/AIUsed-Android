@@ -128,6 +128,14 @@ class AppRepository internal constructor(
         if (isStale()) refreshAll()
     }
 
+    /** Watchdog used by the widget worker: skip when data is very fresh. */
+    suspend fun refreshIfOlderThan(thresholdMs: Long) {
+        initJob.join()
+        val newest = _state.value.snapshots.values.maxOfOrNull { it.attemptedAt } ?: 0L
+        if (System.currentTimeMillis() - newest < thresholdMs) return
+        refreshAll()
+    }
+
     suspend fun refreshProvider(providerId: String) {
         initJob.join()
         val config = _state.value.providers.firstOrNull { it.id == providerId } ?: return
@@ -327,6 +335,10 @@ class AppRepository internal constructor(
         val usage = try {
             withTimeoutOrNull(FETCH_TIMEOUT_MS) { clients.fetch(config, key) }
                 ?: return failureSnapshot(config.id, "连接超时，请检查网络", ErrorKind.NETWORK, now)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            // A cancelled refresh (e.g. the hosting scope went away) is NOT a
+            // provider failure — never persist it as an expired snapshot.
+            throw cancelled
         } catch (error: ProviderException) {
             return failureSnapshot(config.id, error.userMessage, error.kind, now)
         } catch (error: Exception) {

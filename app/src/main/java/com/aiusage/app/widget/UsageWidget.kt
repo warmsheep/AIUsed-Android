@@ -64,6 +64,7 @@ import com.aiusage.app.data.store.WidgetCache
 import com.aiusage.app.data.store.WidgetCacheStore
 import com.aiusage.app.data.store.WidgetProvider
 import com.aiusage.app.data.work.RefreshScheduler
+import kotlinx.coroutines.launch
 import com.aiusage.app.ui.components.quotaColorStops
 import com.aiusage.app.ui.components.remainingTextColor
 import com.aiusage.app.ui.theme.Amber
@@ -128,17 +129,19 @@ class RefreshWidgetAction : ActionCallback {
         // widget (header shows "刷新中…").
         WidgetCacheStore.markRefreshing(context)
         runCatching { refreshWidgets(context) }
-        // Fetch directly through the SAME repository the app uses, so one tap
-        // always refreshes — WorkManager alone can sit in the job queue for
-        // minutes waiting on constraints (battery/network policy).
         val app = context.applicationContext as? com.aiusage.app.AiUsageApp
-        val fetched = app != null && runCatching {
-            app.container.repository.refreshAll()
-        }.isSuccess
-        if (!fetched) {
-            RefreshScheduler.refreshNow(context)
+        if (app != null) {
+            // Run on the application scope: Glance closes its session right
+            // after the feedback repaint above, and anything started in the
+            // action coroutine would be cancelled mid-fetch (that used to
+            // turn every provider into a bogus "过期" snapshot).
+            app.appScope.launch {
+                runCatching { app.container.repository.refreshAll() }
+                runCatching { refreshWidgets(app) }
+            }
         }
-        runCatching { refreshWidgets(context) }
+        // Durable fallback (skips itself when the fetch above just ran).
+        RefreshScheduler.refreshNow(context)
     }
 }
 

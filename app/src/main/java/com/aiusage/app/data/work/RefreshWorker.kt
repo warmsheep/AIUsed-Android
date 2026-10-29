@@ -62,7 +62,9 @@ class RefreshWorker(
     override suspend fun doWork(): Result {
         val app = applicationContext as? AiUsageApp ?: return Result.success()
         return runCatching {
-            app.container.repository.refreshAll()
+            // Watchdog: the widget action already refreshes directly; only
+            // fetch here when the data really is stale (e.g. process died).
+            app.container.repository.refreshIfOlderThan(120_000L)
             runCatching { com.aiusage.app.widget.refreshWidgets(applicationContext) }
             Result.success()
         }.getOrElse { Result.success() }
