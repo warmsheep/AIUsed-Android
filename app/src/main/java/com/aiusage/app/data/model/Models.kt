@@ -200,6 +200,36 @@ data class AppState(
             snapshot.error != null || listOf(snapshot.fiveHour, snapshot.weekly, snapshot.monthly)
                 .any { it.state == SlotState.SUPPORTED && (it.remainingPercent ?: 100.0) <= 20.0 }
         }
+
+    /**
+     * True when a fetch should be triggered automatically (app open / resume).
+     * Fresh successful data is not stale; data older than [staleAfterMs] is;
+     * and so is ANY provider whose last attempt failed more than
+     * [errorRetryAfterMs] ago — so a background refresh that got blocked (and
+     * stamped old data as "过期") heals itself the next time the app comes to
+     * the foreground, where networking always works.
+     */
+    fun isStale(
+        now: Long = System.currentTimeMillis(),
+        staleAfterMs: Long = STALE_AFTER_MS,
+        errorRetryAfterMs: Long = ERROR_RETRY_AFTER_MS,
+    ): Boolean {
+        if (providers.isEmpty()) return false
+        return providers.any { provider ->
+            val snapshot = snapshots[provider.id]
+            when {
+                snapshot == null -> true
+                snapshot.error != null -> now - snapshot.attemptedAt > errorRetryAfterMs
+                snapshot.fetchedAt == 0L -> true
+                else -> now - snapshot.fetchedAt > staleAfterMs
+            }
+        }
+    }
+
+    companion object {
+        const val STALE_AFTER_MS: Long = 5 * 60_000L
+        const val ERROR_RETRY_AFTER_MS: Long = 60_000L
+    }
 }
 
 /** What a provider client returns after a successful call. */

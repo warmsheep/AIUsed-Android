@@ -69,9 +69,15 @@ class AppRepository internal constructor(
         scope.launch {
             initJob.join()
             scheduleRefresh()
-            if (isStale()) {
-                refreshAll()
-            }
+            // No eager fetch here on purpose. This init also runs when the
+            // process is (re)started by a widget tap or WorkManager while the
+            // app is fully backgrounded; a plain coroutine fetch from that
+            // state is network-blocked by Data Saver / battery saver / OEM
+            // 后台联网 policies, and its failure would stamp "数据过期" over
+            // good data AND hold the refresh gate against the foreground
+            // service fetch. Freshness is guaranteed where networking is
+            // actually allowed: ON_RESUME in the foreground, the widget
+            // refresh service, and the periodic worker.
             WidgetCacheStore.write(context, _state.value)
             runCatching { refreshWidgets(context) }
         }
@@ -81,9 +87,25 @@ class AppRepository internal constructor(
         initJob.join()
     }
 
-    suspend fun refreshAll() {
+    suspend fun refreshAll() = refreshAllInternal(awaitGate = false)
+
+    /**
+     * Refresh behind the widget's foreground service. Unlike [refreshAll],
+     * this waits for an in-flight refresh to finish and then runs its own
+     * pass: if the in-flight one was a doomed plain-background fetch (blocked
+     * sockets, stamps "过期" over old data), the foreground-service pass
+     * right after heals the state with a real fetch. An explicit user tap
+     * always gets a fresh attempt.
+     */
+    suspend fun refreshAllAwaitingGate() = refreshAllInternal(awaitGate = true)
+
+    private suspend fun refreshAllInternal(awaitGate: Boolean) {
         initJob.join()
-        if (!refreshGate.tryLock()) return
+        if (awaitGate) {
+            refreshGate.lock()
+        } else {
+            if (!refreshGate.tryLock()) return
+        }
         try {
             val providers = _state.value.providers
             if (providers.isEmpty()) return
@@ -262,6 +284,13 @@ class AppRepository internal constructor(
         return Result.success(Unit)
     }
 
+    /**
+     * Debug-only: encrypt a raw key so the demo receiver can seed providers
+     * that really hit the network (lets device tests distinguish "socket
+     * blocked for background" from "server answered").
+     */
+    internal fun debugEncryptKey(raw: String): String = cipher.encrypt(raw)
+
     /** Debug-only helper used by the screenshot/demo receiver. */
     internal suspend fun replaceForDemo(
         providers: List<ProviderConfig>,
@@ -316,15 +345,7 @@ class AppRepository internal constructor(
         RefreshScheduler.schedule(context, _state.value.settings.refreshMinutes)
     }
 
-    private fun isStale(): Boolean {
-        val providers = _state.value.providers
-        if (providers.isEmpty()) return false
-        val now = System.currentTimeMillis()
-        return providers.any { provider ->
-            val snapshot = _state.value.snapshots[provider.id]
-            snapshot == null || snapshot.fetchedAt == 0L || now - snapshot.fetchedAt > STALE_AFTER_MS
-        }
-    }
+    private fun isStale(): Boolean = _state.value.isStale()
 
     private suspend fun fetchSnapshot(config: ProviderConfig): UsageSnapshot {
         val now = System.currentTimeMillis()
@@ -432,7 +453,6 @@ class AppRepository internal constructor(
     companion object {
         private val DATA_KEY = stringPreferencesKey("state_v1")
         private const val FETCH_TIMEOUT_MS = 30_000L
-        private const val STALE_AFTER_MS = 5 * 60_000L
     }
 }
 

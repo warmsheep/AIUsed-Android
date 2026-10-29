@@ -29,12 +29,10 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
-import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionStartActivity
-import androidx.glance.appwidget.action.actionRunCallback
+import androidx.glance.appwidget.action.actionStartService
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.updateAll
-import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.currentState
 import androidx.glance.state.PreferencesGlanceStateDefinition
@@ -63,8 +61,6 @@ import com.aiusage.app.data.model.ThemeMode
 import com.aiusage.app.data.store.WidgetCache
 import com.aiusage.app.data.store.WidgetCacheStore
 import com.aiusage.app.data.store.WidgetProvider
-import com.aiusage.app.data.work.RefreshScheduler
-import kotlinx.coroutines.launch
 import com.aiusage.app.ui.components.quotaColorStops
 import com.aiusage.app.ui.components.remainingTextColor
 import com.aiusage.app.ui.theme.Amber
@@ -121,28 +117,6 @@ suspend fun refreshWidgets(context: Context) {
         }
     }
     UsageWidget().updateAll(appContext)
-}
-
-class RefreshWidgetAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: androidx.glance.action.ActionParameters) {
-        // Immediate feedback: mark the cache as refreshing and repaint the
-        // widget (header shows "刷新中…").
-        WidgetCacheStore.markRefreshing(context)
-        runCatching { refreshWidgets(context) }
-        val app = context.applicationContext as? com.aiusage.app.AiUsageApp
-        if (app != null) {
-            // Run on the application scope: Glance closes its session right
-            // after the feedback repaint above, and anything started in the
-            // action coroutine would be cancelled mid-fetch (that used to
-            // turn every provider into a bogus "过期" snapshot).
-            app.appScope.launch {
-                runCatching { app.container.repository.refreshAll() }
-                runCatching { refreshWidgets(app) }
-            }
-        }
-        // Durable fallback (skips itself when the fetch above just ran).
-        RefreshScheduler.refreshNow(context)
-    }
 }
 
 /**
@@ -492,7 +466,31 @@ private fun WidgetHeader(cache: WidgetCache, colors: WidgetColors) {
             modifier = GlanceModifier
                 .width(34.dp)
                 .height(34.dp)
-                .clickable(actionRunCallback<RefreshWidgetAction>()),
+                .clickable(
+                    // Start the fetch service DIRECTLY. Two reasons this is
+                    // not actionRunCallback<RefreshWidgetAction>:
+                    //  1. Glance 1.2 drops action callbacks when the tap has
+                    //     to cold-start the process (session shows events=[]),
+                    //     so the button would silently do nothing. A service
+                    //     PendingIntent always fires.
+                    //  2. The fetch runs while the app has no foreground
+                    //     component; background network policy (Data Saver /
+                    //     battery saver / OEM 后台联网) black-holes plain
+                    //     background sockets — every provider fails with
+                    //     NETWORK timeouts and gets stamped "过期" even though
+                    //     the same fetch works in the foreground. The
+                    //     foreground-service state is exempt from those
+                    //     blocks, and widget taps are an explicit user
+                    //     interaction, which Android 12+ exempts from the
+                    //     background foreground-service start restrictions.
+                    actionStartService(
+                        Intent(
+                            LocalContext.current,
+                            WidgetRefreshService::class.java,
+                        ),
+                        isForegroundService = true,
+                    ),
+                ),
             contentAlignment = Alignment.Center,
         ) {
             Image(

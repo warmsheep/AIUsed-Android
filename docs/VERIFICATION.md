@@ -11,13 +11,13 @@
 | `./gradlew :app:assembleDebug` | 通过 |
 | `./gradlew :app:assembleRelease` | 通过（R8 + resource shrink） |
 | `./gradlew :app:lintDebug` | 通过，0 error |
-| `./gradlew :app:connectedDebugAndroidTest` | 通过，14/14 |
+| `./gradlew :app:connectedDebugAndroidTest` | 通过，16/16（2026-10-30 重跑） |
 
 产物：
 
 - `app/build/outputs/apk/debug/app-debug.apk`
 - `app/build/outputs/apk/release/app-release-unsigned.apk`
-- `dist/AIUsage-1.0.0.apk`（zipalign + debug keystore 签名，仅侧载；SHA-256 `ecddd357a926fe20a354e1574490e9a9badc9d1326e431314166d5e20bb10fbc`）
+- `dist/AIUsage-1.0.0.apk`（zipalign + debug keystore 签名，仅侧载；2026-10-30 修复后 SHA-256 `d71e13cba46ca6b62c1bcc2ad6bf888191b54bc2cdde6183a337485fe68dc570`）
 
 ## 2. JVM 单元测试
 
@@ -36,7 +36,7 @@
 
 ## 3. Android instrumentation 测试
 
-`./gradlew :app:connectedDebugAndroidTest` → 14/14 通过。
+`./gradlew :app:connectedDebugAndroidTest` → 16/16 通过（含小组件刷新服务测试）。
 
 覆盖：
 
@@ -65,7 +65,6 @@
 | Moonshot 国际 | `api.moonshot.ai/v1/users/me/balance` | HTTP 401 |
 
 ## 5. 手工 UI / 小组件验收
-
 - 深色首页、浅色首页、阈值告警（Kimi 月 18%）、DeepSeek 仅余额、MiniMax 积分余额
 - 空状态、添加面板、供应商选择、区域选择、密码遮罩、错误提示
 - 设置面板主题切换即时生效，深/浅色均检查
@@ -79,7 +78,7 @@
 - 小组件：圆角平滑 Bitmap 红→绿渐变条，99% 精确显示、余额、未提供项置灰；浅色模式使用与主 App 一致的明亮渐变
 - 小组件深色/浅色两套主题；App 设置深色 → 深色，设置浅色 → 浅色；无需再次点击刷新即可即时切换
 - App 选择「跟随系统」后，系统深色/浅色切换，小组件同步（进程存活时）；进程被系统回收时最迟在下一次刷新/打开 App 更新
-- 小组件点击供应商卡片打开 App；点击右上角刷新不会误打开 App，而会入队 WorkManager
+- 小组件：点击供应商卡片打开 App；点击右上角刷新不会误打开 App，而会启动短前台服务执行一次刷新
 - 小组件 header 显示更新时间与供应商总数
 - Release APK 安装启动正常，WorkManager 周期任务已注册，AppWidget provider 已注册
 
@@ -111,3 +110,32 @@
 - Kimi API Key 与 OAuth 的 header 差异：API Key 路径不发送 `X-Msh-Platform`，并用集成测试锁定。
 
 结论：构建、单元测试、UI 集成测试、lint、release 构建和小组件手工验收均通过；没有已知阻断性 bug。
+
+## 8. 小组件刷新修复（2026-10-30）
+
+**现象**：桌面小组件点刷新 → 显示"刷新中…"→ 最终显示"过期"；进 App 也"数据过期"；再点多少次都"过期"；但 App 内刷新按钮能正常取数。
+
+**根因**（在 Pixel_10_API_36 模拟器复现并定位）：
+
+1. 复现环境：`adb shell svc wifi disable`（仅计量蜂窝）+ `adb shell cmd netpolicy set restrict-background true`（Data Saver）。后台进程（无前台组件）的 socket 被 netd 静默黑洞，前台不受影响。
+2. 修复前小组件刷新路径是裸协程抓取（Application scope / WorkManager）：后台抓取全部超时 → 失败快照覆盖旧数据（`errorKind=NETWORK`，"网络超时"）→ 小组件和 App 都显示"过期"；同一时刻 App 前台刷新 `errorKind=AUTH`（能到服务器）。
+3. 进 App 也不自动恢复：旧 `isStale()` 只看 `fetchedAt > 5 分钟`，刚失败过的数据（`fetchedAt` 未变）不会触发 ON_RESUME 刷新。
+
+**修复**：
+
+- 小组件刷新按钮改为 `actionStartService(isForegroundService = true)` 直接启动 `WidgetRefreshService`（dataSync 前台服务）。前台服务进程状态被 Data Saver / 省电 / 厂商后台联网策略豁免；小组件点击属于用户交互，Android 12+ 允许从后台启动前台服务（文档豁免项："user performs an action on a UI element related to your app … widget"）。
+- 不再用 Glance `actionRunCallback`：Glance 1.2 在冷启动进程上会丢动作（会话 `events=[]`），而服务 PendingIntent 在热/冷（`Start proc … for service`）进程下都可靠。
+- 服务用 `refreshAllAwaitingGate()`：等待在途刷新结束后必定再跑一遍自己的抓取，避免与滞留的后台 WorkManager 抓取竞争把失败结果留给用户。
+- 移除仓库 init 的抢跑抓取：后台冷启动时它必然被网络策略黑洞并占用刷新闸门。前台刷新由 ON_RESUME 保证。
+- `AppState.isStale` 纯函数化并新增规则：失败尝试超过 60 秒冷却即视为过期 → 打开 App 自动重试（前台必然可用网络），"点进 App 也数据过期"可自愈。
+
+**验证**（全部在 Data Saver + 仅蜂窝下）：
+
+| 场景 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 进程存活，点小组件刷新 | NETWORK 超时 → "过期" | 前台服务启动（`Background started FGS: Allowed`，uidState TRNB）→ 抓取到达服务器（AUTH/401，真 Key 即成功） |
+| 进程被杀（模拟过夜），点小组件刷新 | 动作丢失 + init 裸抓取失败 → "过期" | `Start proc … for service WidgetRefreshService` → 抓取到达服务器 |
+| 打开 App | 数据过期不自动恢复（<5 分钟窗口） | ON_RESUME 60 秒冷却后自动重试，前台抓取成功自愈 |
+| App 内刷新 | 正常 | 正常（回归验证） |
+
+回归：44/44 JVM 单测（含新增 `AppStateStaleTest` 8 例）、16/16 instrumentation（新增 FGS 声明与运行/自停测试）、lintDebug 0 error、debug/release 构建通过。复现用的调试钩子（`SEED_KEY` 广播，为演示供应商写入真实加密的假 Key，用于区分"socket 被拦"与"服务器 401"）仅在 debug 构建存在。

@@ -108,10 +108,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 3. 拖到桌面，可自由缩放。
 4. 小组件为流动列表：双行大标题（标题 / 更新时间 · 供应商数量 / 刷新按钮），下方一行一个供应商：状态色方块 + 名称 + 右缘套餐与余额，额度区三列并排（5H / 周 / 月，每列“类型文字在上、剩余百分比在右、进度条在下”）。
 5. 行数跟随桌面格数：1 格 1 家、2 格 3 家、3 格 5 家、4 格 7 家（上限 15 家）。桌面格高会自动校准并持久化；剩余高度按行数均分，最紧字级放不下时自动减行，任何机型都不裁切、不空白。
-6. 点击供应商行 / “＋ 添加供应商” / 页眉文字区都会打开主程序；右上角刷新按钮只触发一次后台更新，应用内刷新与每 30 分钟自动刷新也会同步。
+6. 点击供应商行 / “＋ 添加供应商” / 页眉文字区都会打开主程序；右上角刷新按钮通过一个短暂的系统前台服务执行一次后台更新（保证在省电、流量节省与厂商「后台联网」限制下依然能取到数据），应用内刷新与每 30 分钟自动刷新也会同步。
 7. 小组件颜色跟随 App 的主题设置；在 App 设置里选择「跟随系统」后，会随系统深色/浅色模式切换。
 
-小米 HyperOS 与一加 ColorOS 均使用系统标准 AppWidget API，不需要额外安装插件。部分省电策略可能延迟后台刷新；打开 App 或点击小组件刷新会立即更新。
+小米 HyperOS 与一加 ColorOS 均使用系统标准 AppWidget API，不需要额外安装插件。每 30 分钟的自动刷新受 Doze 与厂商省电策略影响可能延迟；打开 App 或点击小组件刷新按钮（短前台服务）则始终立即更新。
 
 ## 安全
 
@@ -125,11 +125,12 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 已通过：
 
-- 36 个 JVM 单元测试（5 家供应商解析、HTTP 错误映射、时间/金额格式化、桌面网格格点反推校准、2N−1 行数节律、三列分块）
-- 14 个 Android instrumentation 测试（Compose 空状态/四格布局/添加面板、Keystore 加解密、小组件缓存与 receiver、5 家供应商的 MockWebServer 路径/鉴权/解析）
+- 44 个 JVM 单元测试（5 家供应商解析、HTTP 错误映射、时间/金额格式化、桌面网格格点反推校准、2N−1 行数节律、三列分块、自动刷新过期规则）
+- 16 个 Android instrumentation 测试（Compose 空状态/四格布局/添加面板、Keystore 加解密、小组件缓存与 receiver、小组件刷新前台服务声明与自停、5 家供应商的 MockWebServer 路径/鉴权/解析）
 - `lintDebug` 0 error
 - `assembleRelease` R8 构建通过，release APK 在 Pixel 10 API 36 上启动正常
 - 对 10 个官方端点做了真实 401/TLS 连通性验证，错误处理符合预期
+- 小组件刷新在 Data Saver + 仅蜂窝（后台网络被系统黑洞）下复现"点击刷新显示过期"，并验证修复后小组件/被杀进程/打开 App 三个场景均恢复（见 `docs/VERIFICATION.md` §8）
 
 详细记录见 [docs/VERIFICATION.md](docs/VERIFICATION.md)。项目还带一个 30 分钟自监督任务，说明见 [docs/SUPERVISION.md](docs/SUPERVISION.md)。
 

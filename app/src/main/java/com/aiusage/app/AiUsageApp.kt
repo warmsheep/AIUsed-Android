@@ -13,7 +13,6 @@ import com.aiusage.app.data.store.AppRepository
 import com.aiusage.app.widget.refreshWidgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class AiUsageApp : Application() {
@@ -22,12 +21,6 @@ class AiUsageApp : Application() {
 
     private val widgetThemeScope = CoroutineScope(Dispatchers.Default)
 
-    /**
-     * Long-lived scope for work that must survive the widget action callback
-     * (Glance closes its session right after a repaint, which would cancel a
-     * fetch started inside the action coroutine).
-     */
-    val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val configReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_CONFIGURATION_CHANGED ||

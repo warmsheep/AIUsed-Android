@@ -6,6 +6,7 @@ import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ForegroundInfo
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
@@ -38,6 +39,9 @@ object RefreshScheduler {
     }
 
     fun refreshNow(context: Context) {
+        // Durable one-shot fallback. The widget's refresh button now starts
+        // WidgetRefreshService directly (network-safe in the background), so
+        // this is kept for manual/debug use and as a safety net.
         val request = OneTimeWorkRequestBuilder<RefreshWorker>()
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .setConstraints(
@@ -69,4 +73,12 @@ class RefreshWorker(
             Result.success()
         }.getOrElse { Result.success() }
     }
+
+    /**
+     * Required when this worker runs expedited on API < 31: WorkManager
+     * promotes expedited work to a foreground service there and fails the
+     * request at dispatch if the worker cannot supply one.
+     */
+    override suspend fun getForegroundInfo(): ForegroundInfo =
+        com.aiusage.app.widget.refreshForegroundInfo(applicationContext)
 }

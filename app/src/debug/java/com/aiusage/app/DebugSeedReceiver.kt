@@ -38,6 +38,29 @@ class DebugSeedReceiver : BroadcastReceiver() {
                     Log.d("AIUsageDebug", "widget metrics reset, updateAll result=$result")
                     return@launch
                 }
+                if (intent.action == ACTION_SEED_KEY) {
+                    // Seed ONE OpenCode Go provider with a real (fake-value)
+                    // encrypted key and a fresh snapshot, so a refresh actually
+                    // opens a socket. Persisted errorKind then shows whether
+                    // the network was reachable: AUTH (401) = socket worked,
+                    // NETWORK = socket blocked for the app's process state.
+                    val rawKey = intent.getStringExtra("key") ?: "sk-debug-fake-key-000000000"
+                    val now = System.currentTimeMillis()
+                    val provider = demo("opencode", ProviderKind.OPENCODE_GO, Region.AUTO)
+                        .copy(encryptedKey = app.container.repository.debugEncryptKey(rawKey))
+                    val snapshot = UsageSnapshot(
+                        providerId = "opencode",
+                        planName = "Go 订阅（调试 Key）",
+                        fiveHour = QuotaSlot.of(42.0, now + 90 * 60_000L),
+                        weekly = QuotaSlot.of(68.0, now + 2 * 86_400_000L),
+                        monthly = QuotaSlot.of(88.0, now + 18 * 86_400_000L),
+                        fetchedAt = now,
+                        attemptedAt = now,
+                    )
+                    app.container.repository.replaceForDemo(listOf(provider), mapOf("opencode" to snapshot))
+                    Log.d("AIUsageDebug", "seeded fake-key opencode provider")
+                    return@launch
+                }
                 if (intent.action == ACTION_LIGHT || intent.action == ACTION_DARK || intent.action == ACTION_SYSTEM) {
                     val mode = when (intent.action) {
                         ACTION_LIGHT -> ThemeMode.LIGHT
@@ -168,5 +191,6 @@ class DebugSeedReceiver : BroadcastReceiver() {
         private const val ACTION_SEED_ONE = "com.aiusage.app.debug.SEED_ONE"
         private const val ACTION_SEED_TWO = "com.aiusage.app.debug.SEED_TWO"
         private const val ACTION_RESET_METRICS = "com.aiusage.app.debug.RESET_METRICS"
+        private const val ACTION_SEED_KEY = "com.aiusage.app.debug.SEED_KEY"
     }
 }
