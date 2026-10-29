@@ -14,13 +14,17 @@
 | --- | --- |
 | <img src="docs/screenshots/home-dark-cards.png" width="330" /> | <img src="docs/screenshots/add-provider.png" width="330" /> |
 
-| 桌面小组件 · 深色 | 桌面小组件 · 浅色 |
+| 桌面小组件 · 浅色 4×2 | 桌面小组件 · 深色 4×2 |
 | --- | --- |
-| <img src="docs/screenshots/widget-4x2.png" width="330" /> | <img src="docs/screenshots/widget-light.png" width="330" /> |
+| <img src="docs/screenshots/widget-4x2.png" width="330" /> | <img src="docs/screenshots/widget-dark.png" width="330" /> |
 
-| 小组件 · 单家三列条 | 小组件 · 4×3 | 小组件 · 4×4 |
+| 小组件 · 拉高 4×3（5 家） | 小组件 · 拉高 4×4（7 家） | 小组件 · 拉高 5×4（9 家） |
 | --- | --- | --- |
-| <img src="docs/screenshots/widget-single.png" width="330" /> | <img src="docs/screenshots/widget-4x3.png" width="330" /> | <img src="docs/screenshots/widget-4x4.png" width="330" /> |
+| <img src="docs/screenshots/widget-4x3.png" width="330" /> | <img src="docs/screenshots/widget-4x4.png" width="330" /> | <img src="docs/screenshots/widget-5x4.png" width="330" /> |
+
+| 小组件 · 仅 1 家供应商 | 小组件 · 仅 2 家供应商 |
+| --- | --- |
+| <img src="docs/screenshots/widget-single.png" width="330" /> | <img src="docs/screenshots/widget-two.png" width="330" /> |
 
 | 空状态 |
 | --- |
