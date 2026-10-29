@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AI用量</string>
+    <string name="widget_name">AI用量 · 额度</string>
+    <string name="widget_description">一眼查看 AI 供应商的 5 小时、周、月额度与余额</string>
+</resources>

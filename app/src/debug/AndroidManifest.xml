@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application
+        android:networkSecurityConfig="@xml/network_security_config">
+        <activity
+            android:name=".DebugPinWidgetActivity"
+            android:exported="true" />
+        <receiver
+            android:name=".DebugSeedReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.aiusage.app.debug.SEED_DEMO" />
+                <action android:name="com.aiusage.app.debug.CLEAR_DEMO" />
+                <action android:name="com.aiusage.app.debug.UPDATE_WIDGET" />
+                <action android:name="com.aiusage.app.debug.SET_LIGHT" />
+                <action android:name="com.aiusage.app.debug.SET_DARK" />
+                <action android:name="com.aiusage.app.debug.SET_SYSTEM" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
